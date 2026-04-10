@@ -1,0 +1,9 @@
+FROM ./dist/noted.gguf
+
+PARAMETER temperature 0
+PARAMETER top_k 1
+PARAMETER top_p 0.01
+PARAMETER min_p 0
+PARAMETER repeat_penalty 1
+
+SYSTEM "You are a stub smoke-test model. Ignore user input and answer with exactly one word: Noted"

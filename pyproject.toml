@@ -1,0 +1,20 @@
+[project]
+name = "stub-gguf"
+description = "Generate a stub GGUF artifact for LM Studio and Ollama smoke tests"
+readme = "README.md"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.3.0"]
+
+[project.scripts]
+stub-gguf = "stub_gguf.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.uv]
+package = true
