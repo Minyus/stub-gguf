@@ -4,9 +4,15 @@ description = "Generate a stub GGUF artifact for LM Studio and Ollama smoke test
 readme = "README.md"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "numpy>=2.2.0",
+  "sentencepiece>=0.2.0",
+  "torch>=2.6.0",
+  "transformers>=5.5.3",
+  "typer>=0.15.0",
+]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = ["pytest>=8.3.0"]
 
 [project.scripts]

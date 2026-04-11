@@ -1,50 +1,52 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
-import sys
 
-from stub_gguf.generate import generate_stub_gguf
-from stub_gguf.validate import validate_file
+import typer
 
+from stub_gguf.generate import generate_artifact
+from stub_gguf.convert import ConvertScriptNotFoundError
+from stub_gguf.model_spec import DEFAULT_OUTPUT
+from stub_gguf.validate import validate_artifact
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="stub-gguf")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    generate_parser = subparsers.add_parser("generate")
-    generate_parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("dist/noted.gguf"),
-    )
-
-    validate_parser = subparsers.add_parser("validate")
-    validate_parser.add_argument(
-        "--input",
-        type=Path,
-        default=Path("dist/noted.gguf"),
-    )
-    return parser
+app = typer.Typer(no_args_is_help=True)
 
 
-def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
+@app.command()
+def generate(output: Path = typer.Option(DEFAULT_OUTPUT, "--output")) -> None:
+    try:
+        generate_artifact(output)
+    except OSError as exc:
+        typer.echo(f"Error: unable to write {output}: {exc.strerror or exc}", err=True)
+        raise typer.Exit(code=1)
+    except ValueError as exc:
+        typer.echo(f"Error: unable to generate GGUF artifact: {exc}", err=True)
+        raise typer.Exit(code=1)
+    except (RuntimeError, ConvertScriptNotFoundError) as exc:
+        typer.echo(f"Error: unable to generate GGUF artifact: {exc}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Generated {output}")
 
-    if args.command == "generate":
-        written = generate_stub_gguf(args.output)
-        print(f"Wrote {written}")
-    elif args.command == "validate":
-        try:
-            validate_file(args.input)
-        except (OSError, ValueError) as error:
-            print(f"Validation failed: {error}", file=sys.stderr)
-            return 1
-        print(f"Validated {args.input}")
 
-    return 0
+@app.command()
+def validate(path: Path = typer.Option(DEFAULT_OUTPUT, "--input")) -> None:
+    try:
+        validate_artifact(path)
+    except FileNotFoundError:
+        typer.echo(f"Error: file not found: {path}", err=True)
+        raise typer.Exit(code=1)
+    except OSError as exc:
+        typer.echo(f"Error: unable to read {path}: {exc.strerror or exc}", err=True)
+        raise typer.Exit(code=1)
+    except ValueError as exc:
+        typer.echo(f"Error: invalid GGUF artifact: {exc}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Validated {path}")
+
+
+def main() -> None:
+    app()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
