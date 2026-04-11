@@ -37,11 +37,18 @@ def test_build_convert_command_raises_same_error_when_env_override_points_to_mis
         build_convert_command(tmp_path / "model", tmp_path / "output.gguf")
 
 
-def test_build_convert_command_requires_configured_converter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_build_convert_command_uses_vendored_converter_when_env_override_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("LLAMA_CPP_CONVERT", raising=False)
 
-    with pytest.raises(ConvertScriptNotFoundError, match="Missing llama.cpp converter"):
-        build_convert_command(tmp_path / "model", tmp_path / "output.gguf")
+    command = build_convert_command(tmp_path / "model", tmp_path / "output.gguf")
+
+    assert command == [
+        sys.executable,
+        str(resolve_default_convert_script()),
+        str(tmp_path / "model"),
+        "--outfile",
+        str(tmp_path / "output.gguf"),
+    ]
 
 
 def test_resolve_default_convert_script_errors_when_missing() -> None:
