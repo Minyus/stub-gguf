@@ -59,7 +59,7 @@ If LM Studio rejects the file, treat that as a compatibility failure and verify 
 2. From the repository root, create the model:
 
 ```bash
-ollama create stub-noted -f ollama/Modelfile
+ollama create stub:6k -f ollama.modelfile
 ```
 
 3. Run it:
@@ -70,7 +70,7 @@ ollama run stub-noted
 
 4. Expected smoke-test response: a successful load/run, not a guaranteed token-for-token response.
 
-The included `ollama/Modelfile` points at `./dist/stub.gguf` and keeps generation highly constrained.
+The included `ollama.modelfile` points at `./dist/stub.gguf` and keeps generation highly constrained.
 
 ## Limitations
 
