@@ -65,10 +65,10 @@ ollama create stub:6k -f ollama.modelfile
 3. Run it:
 
 ```bash
-ollama run stub-noted
+ollama run stub:6k
 ```
 
-4. Expected smoke-test response: a successful load/run, not a guaranteed token-for-token response.
+4. Expected smoke-test response: a short harmless reply, not a guaranteed exact phrase.
 
 The included `ollama.modelfile` points at `./dist/stub.gguf` and keeps generation highly constrained.
 

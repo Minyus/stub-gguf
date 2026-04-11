@@ -178,7 +178,7 @@ def test_generate_artifact_uses_real_converter_script(tmp_path: Path, monkeypatc
             model_dir = Path(sys.argv[1])
             outfile = Path(sys.argv[sys.argv.index('--outfile') + 1])
 
-            required = ['config.json', 'generation_config.json', 'pytorch_model.bin', 'tokenizer.model', 'tokenizer_config.json']
+            required = ['config.json', 'generation_config.json', 'pytorch_model.bin', 'special_tokens_map.json', 'tokenizer.model', 'tokenizer_config.json']
             missing = [name for name in required if not (model_dir / name).exists()]
             if missing:
                 raise SystemExit(f'missing inputs: {missing}')
@@ -196,6 +196,42 @@ def test_generate_artifact_uses_real_converter_script(tmp_path: Path, monkeypatc
     assert result == output_path
     assert output_path.read_text(encoding="utf-8") == "GGUF:llama:32"
     assert output_path.parent.exists()
+
+
+def test_generate_artifact_real_converter_input_includes_chat_metadata_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output_path = tmp_path / "dist" / "stub.gguf"
+    script_path = tmp_path / "converter.py"
+    script_path.write_text(
+        textwrap.dedent(
+            """
+            from __future__ import annotations
+
+            import json
+            import sys
+            from pathlib import Path
+
+
+            model_dir = Path(sys.argv[1])
+            outfile = Path(sys.argv[sys.argv.index('--outfile') + 1])
+
+            required = ['config.json', 'generation_config.json', 'pytorch_model.bin', 'special_tokens_map.json', 'tokenizer.model', 'tokenizer_config.json']
+            missing = [name for name in required if not (model_dir / name).exists()]
+            if missing:
+                raise SystemExit(f'missing inputs: {missing}')
+
+            tokenizer_config = json.loads((model_dir / 'tokenizer_config.json').read_text(encoding='utf-8'))
+            generation_config = json.loads((model_dir / 'generation_config.json').read_text(encoding='utf-8'))
+            outfile.write_text(f"CHAT:{'chat_template' in tokenizer_config}:{generation_config['min_new_tokens']}", encoding='utf-8')
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLAMA_CPP_CONVERT", str(script_path))
+
+    result = generate_module.generate_artifact(output_path)
+
+    assert result == output_path
+    assert output_path.read_text(encoding="utf-8") == "CHAT:True:1"
 
 
 def test_default_output_is_dist_stub_gguf() -> None:

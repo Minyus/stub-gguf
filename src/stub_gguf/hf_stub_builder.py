@@ -115,28 +115,63 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     prefix.with_suffix(".vocab").unlink()
     tokenizer_config = {
         "add_bos_token": True,
-        "add_eos_token": False,
+        "add_eos_token": True,
         "bos_token": "<s>",
         "bos_token_id": 1,
+        "chat_template": _chat_template(),
+        "clean_up_tokenization_spaces": False,
         "eos_token": "</s>",
         "eos_token_id": 2,
+        "legacy": False,
         "model_max_length": spec.max_position_embeddings,
-        "pad_token": None,
-        "pad_token_id": None,
+        "pad_token": "</s>",
+        "pad_token_id": 2,
         "tokenizer_class": "LlamaTokenizerFast",
         "unk_token": "<unk>",
         "unk_token_id": 0,
     }
     (output_dir / "tokenizer_config.json").write_text(json.dumps(tokenizer_config, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "special_tokens_map.json").write_text(json.dumps(_special_tokens_map(), indent=2, sort_keys=True), encoding="utf-8")
 
 def _write_generation_config(output_dir: Path) -> None:
     generation_config = {
         "bos_token_id": 1,
+        "do_sample": False,
         "eos_token_id": 2,
-        "pad_token_id": None,
+        "max_new_tokens": 8,
+        "min_new_tokens": 1,
+        "pad_token_id": 2,
+        "repetition_penalty": 1.0,
+        "temperature": 0.0,
+        "top_k": 1,
+        "top_p": 1.0,
         "transformers_version": "4.0.0",
     }
     (output_dir / "generation_config.json").write_text(json.dumps(generation_config, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _chat_template() -> str:
+    return (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'system' %}"
+        "<s>system\n{{ message['content'] }}\n"
+        "{% elif message['role'] == 'user' %}"
+        "user\n{{ message['content'] }}\n"
+        "{% elif message['role'] == 'assistant' %}"
+        "assistant\n{{ message['content'] }}</s>\n"
+        "{% endif %}"
+        "{% endfor %}"
+        "{% if add_generation_prompt %}assistant\n{% endif %}"
+    )
+
+
+def _special_tokens_map() -> dict[str, str]:
+    return {
+        "bos_token": "<s>",
+        "eos_token": "</s>",
+        "pad_token": "</s>",
+        "unk_token": "<unk>",
+    }
 
 
 def _write_weights(output_dir: Path, spec: TinyLlamaSpec) -> None:

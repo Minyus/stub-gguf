@@ -58,10 +58,10 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     assert tokenizer_config["unk_token_id"] == 0
     assert tokenizer_config["bos_token_id"] == 1
     assert tokenizer_config["eos_token_id"] == 2
-    assert tokenizer_config["pad_token_id"] is None
+    assert tokenizer_config["pad_token_id"] == 2
     assert generation_config["bos_token_id"] == 1
     assert generation_config["eos_token_id"] == 2
-    assert generation_config["pad_token_id"] is None
+    assert generation_config["pad_token_id"] == 2
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(tokenizer_model_path))
@@ -101,6 +101,40 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
         assert state_dict[f"{prefix}.mlp.down_proj.weight"].shape == (spec.hidden_size, spec.intermediate_size)
         assert state_dict[f"{prefix}.input_layernorm.weight"].shape == (spec.hidden_size,)
         assert state_dict[f"{prefix}.post_attention_layernorm.weight"].shape == (spec.hidden_size,)
+
+
+def test_build_hf_stub_writes_chat_template_and_special_token_metadata(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
+
+    tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
+    special_tokens_map = json.loads((checkpoint_dir / "special_tokens_map.json").read_text(encoding="utf-8"))
+
+    assert "chat_template" in tokenizer_config
+    assert "assistant" in tokenizer_config["chat_template"]
+    assert tokenizer_config["add_bos_token"] is True
+    assert tokenizer_config["add_eos_token"] is True
+    assert tokenizer_config["pad_token"] == "</s>"
+    assert tokenizer_config["pad_token_id"] == 2
+    assert special_tokens_map == {
+        "bos_token": "<s>",
+        "eos_token": "</s>",
+        "pad_token": "</s>",
+        "unk_token": "<unk>",
+    }
+
+
+def test_build_hf_stub_writes_generation_config_for_short_non_empty_responses(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
+
+    generation_config = json.loads((checkpoint_dir / "generation_config.json").read_text(encoding="utf-8"))
+
+    assert generation_config["bos_token_id"] == 1
+    assert generation_config["eos_token_id"] == 2
+    assert generation_config["pad_token_id"] == 2
+    assert generation_config["do_sample"] is False
+    assert generation_config["max_new_tokens"] == 8
+    assert generation_config["min_new_tokens"] == 1
+    assert generation_config["repetition_penalty"] == 1.0
 
 
 def test_build_hf_stub_forces_llama_model_type_even_if_spec_differs(tmp_path: Path) -> None:
