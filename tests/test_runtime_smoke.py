@@ -15,7 +15,7 @@ MODEL_PATH = Path.home() / ".lmstudio/models/local-dev/stub/"
 GGUF_PATH = Path("dist/stub.gguf")
 LM_STUDIO_API_URL = "http://localhost:1234/v1/chat/completions"
 OLLAMA_MODEL = "stub:6k"
-PROMPT = "say ok"
+PROMPT = "ok"
 TIME_BUDGET_SECONDS = 1.0
 SETUP_TIMEOUT_SECONDS = 30.0
 

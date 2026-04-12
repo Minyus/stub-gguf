@@ -49,7 +49,10 @@ docker run --rm -v "$PWD/dist:/app/dist" stub-gguf
    - top-k: `1`
    - top-p: `0.01`
 5. Send any prompt.
-6. Treat successful loading as the primary goal; the exact reply is not the contract.
+6. Treat successful loading plus a short non-empty printable ASCII reply as the goal.
+   The smoke prompt is intentionally tiny (`ok`) to stay within LM Studio's runtime-safe token budget.
+   The fake tool-friendly chat metadata is advertised for compatibility, but tool execution is not supported.
+   The HF-side config advertises `max_position_embeddings=100000` as compatibility metadata, not a performance guarantee.
 
 If LM Studio rejects the file, treat that as a compatibility failure and verify the generated GGUF with `uv run stub-gguf validate`.
 
@@ -61,7 +64,7 @@ Run the real local smoke test with:
 uv run pytest -m runtime tests/test_runtime_smoke.py
 ```
 
-It checks for the LM Studio import path at `~/.lmstudio/models/local-dev/stub/`, calls LM Studio through `http://localhost:1234/v1/chat/completions`, ensures `dist/stub.gguf` exists before the Ollama probe, runs `ollama create stub:6k -f ollama.modelfile`, and fails only if both LM Studio and Ollama fail to return a non-empty response within 1 second.
+It checks for the LM Studio import path at `~/.lmstudio/models/local-dev/stub/`, calls LM Studio through `http://localhost:1234/v1/chat/completions`, ensures `dist/stub.gguf` exists before the Ollama probe, runs `ollama create stub:6k -f ollama.modelfile`, and fails only if both LM Studio and Ollama fail to return a short non-empty printable ASCII response within 1 second.
 
 ## Ollama
 
@@ -78,7 +81,7 @@ ollama create stub:6k -f ollama.modelfile
 ollama run stub:6k
 ```
 
-4. Expected smoke-test response: a short harmless reply, not a guaranteed exact phrase.
+4. Expected smoke-test response: a short harmless printable ASCII reply, not a guaranteed exact phrase.
 
 The included `ollama.modelfile` points at `./dist/stub.gguf` and keeps generation highly constrained.
 
