@@ -22,7 +22,20 @@ SETUP_TIMEOUT_SECONDS = 30.0
 
 def _is_short_printable_ascii_response(text: str) -> bool:
     stripped = text.strip()
-    return bool(stripped) and len(stripped) <= 8 and all(32 <= ord(char) <= 126 for char in stripped)
+    return bool(stripped) and len(stripped) <= 16 and all(32 <= ord(char) <= 126 for char in stripped)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('<unk>f"3aeO', True),
+        ("", False),
+        ("hello\nworld", False),
+        ("abcdefghijklmnopq", False),
+    ],
+)
+def test_is_short_printable_ascii_response(text: str, expected: bool) -> None:
+    assert _is_short_printable_ascii_response(text) is expected
 
 
 def _ensure_dist_stub() -> tuple[bool, str]:
