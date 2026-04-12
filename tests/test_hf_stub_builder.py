@@ -160,13 +160,14 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     tokenizer = LlamaTokenizerFast.from_pretrained(checkpoint_dir, local_files_only=True)
 
     rendered = tokenizer.apply_chat_template(
-        [{"role": "user", "content": "hello"}],
+        [{"role": "user", "content": "hello"}, {"role": "tool", "content": "ok"}],
         tools=[{"name": "lookup", "description": "find a value"}],
         tokenize=False,
         add_generation_prompt=True,
     )
 
     assert "tools\n" in rendered
+    assert "tool\nok\n" in rendered
     assert '"name": "lookup"' in rendered
     assert rendered.endswith("assistant\n")
 

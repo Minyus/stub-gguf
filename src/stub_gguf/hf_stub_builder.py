@@ -101,6 +101,9 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
             "tool call tool result tool call",
             "user assistant system tool user assistant",
             "short harmless reply short harmless reply",
+            '{"name":"lookup","description":"find value"}',
+            '{"role":"tool","content":"ok"}',
+            '{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}',
         ]
     )
     corpus = "\n".join(corpus_lines)
