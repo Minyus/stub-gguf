@@ -162,7 +162,7 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     rendered = tokenizer.apply_chat_template(
         [
             {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": '{"query":"hello"}'}}]},
+            {"role": "assistant", "content": "Let me check.", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": '{"query":"hello"}'}}]},
             {"role": "tool", "content": "ok"},
         ],
         tools=[{"name": "lookup", "description": "find a value"}],
@@ -171,6 +171,7 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     )
 
     assert "tools\n" in rendered
+    assert "assistant\nLet me check.\n" in rendered
     assert "call_1" in rendered
     assert '"name": "lookup"' in rendered
     assert '"arguments": "{\\"query\\":\\"hello\\"}"' in rendered
