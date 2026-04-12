@@ -8,7 +8,7 @@ import sys
 import subprocess
 
 import torch
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
 
 from stub_gguf.model_spec import TinyLlamaSpec
 
@@ -78,6 +78,7 @@ def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
         "rope_theta": config.rope_theta,
         "rms_norm_eps": config.rms_norm_eps,
         "torch_dtype": spec.torch_dtype,
+        "unk_token_id": 0,
         "vocab_size": config.vocab_size,
     }
     (output_dir / "config.json").write_text(json.dumps(config_payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -88,6 +89,14 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     corpus_tokens = [f"token_{idx:04d}" for idx in range(max(sentencepiece_vocab_size * 2, 64))]
     corpus_lines = [" ".join(corpus_tokens[idx : idx + 16]) for idx in range(0, len(corpus_tokens), 16)]
     corpus_lines.extend(" ".join(reversed(corpus_tokens[idx : idx + 16])) for idx in range(0, len(corpus_tokens), 16))
+    corpus_lines.extend(
+        [
+            "say ok say ok say ok",
+            "Hello Hello Hello",
+            "short harmless reply short harmless reply",
+            "user assistant system user assistant",
+        ]
+    )
     corpus = "\n".join(corpus_lines)
     corpus_path = output_dir / "tokenizer_corpus.txt"
     prefix = output_dir / "_tokenizer"
@@ -108,6 +117,7 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
                     "shuffle_input_sentence=False, "
                     "num_threads=1, "
                     "max_sentence_length=10000, "
+                    "user_defined_symbols=['<0x0A>'], "
                     "bos_id=1, eos_id=2, pad_id=-1, unk_id=0, "
                     "hard_vocab_limit=True, train_extremely_large_corpus=False)"
                 ),
@@ -120,6 +130,20 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     (output_dir / "tokenizer.model").write_bytes((prefix.with_suffix(".model")).read_bytes())
     prefix.with_suffix(".model").unlink()
     prefix.with_suffix(".vocab").unlink()
+    tokenizer = LlamaTokenizerFast(
+        vocab_file=str(output_dir / "tokenizer.model"),
+        unk_token="<unk>",
+        bos_token="<s>",
+        eos_token="</s>",
+        pad_token="</s>",
+        add_bos_token=True,
+        add_eos_token=True,
+        model_max_length=spec.max_position_embeddings,
+        clean_up_tokenization_spaces=False,
+        legacy=False,
+    )
+    tokenizer.chat_template = _chat_template()
+    tokenizer.save_pretrained(output_dir)
     tokenizer_config = {
         "add_bos_token": True,
         "add_eos_token": True,
@@ -161,11 +185,11 @@ def _chat_template() -> str:
     return (
         "{% for message in messages %}"
         "{% if message['role'] == 'system' %}"
-        "<s>system\n{{ message['content'] }}\n"
+        "system\n{{ message['content'] }}\n"
         "{% elif message['role'] == 'user' %}"
         "user\n{{ message['content'] }}\n"
         "{% elif message['role'] == 'assistant' %}"
-        "assistant\n{{ message['content'] }}</s>\n"
+        "assistant\n{{ message['content'] }}\n"
         "{% endif %}"
         "{% endfor %}"
         "{% if add_generation_prompt %}assistant\n{% endif %}"
@@ -215,5 +239,5 @@ def _write_weights(output_dir: Path, spec: TinyLlamaSpec) -> None:
     config = _build_model_config(spec, torch_dtype)
     with _manual_seed(0):
         model = LlamaForCausalLM(config)
-    model = model.to(torch_dtype)  # pyright: ignore[reportArgumentType]
+    model.to(dtype=torch_dtype)  # pyright: ignore[reportCallIssue]
     torch.save(model.state_dict(), output_dir / "pytorch_model.bin")

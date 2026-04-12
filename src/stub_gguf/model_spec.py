@@ -67,7 +67,7 @@ class TinyLlamaSpec:
     num_attention_heads: int = 4
     num_key_value_heads: int = 4
     num_hidden_layers: int = 2
-    vocab_size: int = 32
+    vocab_size: int = 64
     max_position_embeddings: int = 128
     rope_theta: float = 10000.0
     rms_norm_eps: float = 1e-5

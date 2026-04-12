@@ -58,6 +58,7 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     assert config["num_hidden_layers"] == spec.num_hidden_layers
     assert config["vocab_size"] == spec.vocab_size
     assert config["max_position_embeddings"] == spec.max_position_embeddings
+    assert config["unk_token_id"] == 0
 
     tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
     generation_config = json.loads(generation_config_path.read_text(encoding="utf-8"))
@@ -109,6 +110,46 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
         assert state_dict[f"{prefix}.post_attention_layernorm.weight"].shape == (spec.hidden_size,)
 
 
+def test_build_hf_stub_writes_a_canonical_tokenizer_artifact(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
+
+    assert (checkpoint_dir / "tokenizer.json").exists()
+
+
+def test_build_hf_stub_tokenizer_includes_a_newline_token(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
+
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+    pieces = {
+        processor.id_to_piece(piece_id)  # pyright: ignore[reportAttributeAccessIssue]
+        for piece_id in range(processor.get_piece_size())  # pyright: ignore[reportAttributeAccessIssue]
+    }
+
+    assert "\n" in pieces or "<0x0A>" in pieces
+
+
+def test_build_hf_stub_tokenizer_can_encode_short_ascii_prompts_without_unk_ids(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
+
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+
+    for prompt in ("say ok", "Hello"):
+        token_ids = processor.encode(prompt, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
+        assert 0 not in token_ids
+
+
+def test_build_hf_stub_tokenizer_prefers_word_initial_pieces_for_smoke_prompts(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
+
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+
+    assert processor.encode("say ok", out_type=str) == ["▁say", "▁ok"]  # pyright: ignore[reportAttributeAccessIssue]
+    assert processor.encode("Hello", out_type=str) == ["▁Hello"]  # pyright: ignore[reportAttributeAccessIssue]
+
+
 def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_deterministic(tmp_path: Path) -> None:
     spec = TinyLlamaSpec(vocab_size=32)
 
@@ -130,24 +171,16 @@ def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_determin
         assert torch.equal(first_tensor, second_tensor)
 
 
-def test_build_hf_stub_writes_chat_template_and_special_token_metadata(tmp_path: Path) -> None:
+def test_build_hf_stub_does_not_mix_auto_bos_eos_flags_with_literal_template_markers(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
 
     tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
-    special_tokens_map = json.loads((checkpoint_dir / "special_tokens_map.json").read_text(encoding="utf-8"))
+    chat_template = tokenizer_config["chat_template"]
 
-    assert "chat_template" in tokenizer_config
-    assert "assistant" in tokenizer_config["chat_template"]
     assert tokenizer_config["add_bos_token"] is True
     assert tokenizer_config["add_eos_token"] is True
-    assert tokenizer_config["pad_token"] == "</s>"
-    assert tokenizer_config["pad_token_id"] == 2
-    assert special_tokens_map == {
-        "bos_token": "<s>",
-        "eos_token": "</s>",
-        "pad_token": "</s>",
-        "unk_token": "<unk>",
-    }
+    assert "<s>" not in chat_template
+    assert "</s>" not in chat_template
 
 
 def test_build_hf_stub_writes_generation_config_for_short_non_empty_responses(tmp_path: Path) -> None:

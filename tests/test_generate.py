@@ -194,7 +194,7 @@ def test_generate_artifact_uses_real_converter_script(tmp_path: Path, monkeypatc
     result = generate_module.generate_artifact(output_path)
 
     assert result == output_path
-    assert output_path.read_text(encoding="utf-8") == "GGUF:llama:32"
+    assert output_path.read_text(encoding="utf-8") == "GGUF:llama:64"
     assert output_path.parent.exists()
 
 
