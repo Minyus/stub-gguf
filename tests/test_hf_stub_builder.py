@@ -7,6 +7,7 @@ import json
 import sentencepiece as spm
 import pytest
 import torch
+from transformers import LlamaForCausalLM
 
 from stub_gguf.hf_stub_builder import build_hf_stub
 from stub_gguf.model_spec import TinyLlamaSpec
@@ -43,6 +44,11 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     ):
         assert path.exists()
 
+    model = LlamaForCausalLM.from_pretrained(checkpoint_dir, local_files_only=True)
+    assert model.config.model_type == "llama"
+    assert model.config.hidden_size == spec.hidden_size
+    assert model.config.vocab_size == spec.vocab_size
+
     config = json.loads(config_path.read_text(encoding="utf-8"))
     assert config["model_type"] == "llama"
     assert config["hidden_size"] == spec.hidden_size
@@ -65,7 +71,7 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(tokenizer_model_path))
-    assert processor.get_piece_size() == spec.vocab_size
+    assert processor.get_piece_size() == spec.vocab_size  # pyright: ignore[reportAttributeAccessIssue]
 
     state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
     required_keys = {
@@ -101,6 +107,27 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
         assert state_dict[f"{prefix}.mlp.down_proj.weight"].shape == (spec.hidden_size, spec.intermediate_size)
         assert state_dict[f"{prefix}.input_layernorm.weight"].shape == (spec.hidden_size,)
         assert state_dict[f"{prefix}.post_attention_layernorm.weight"].shape == (spec.hidden_size,)
+
+
+def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_deterministic(tmp_path: Path) -> None:
+    spec = TinyLlamaSpec(vocab_size=32)
+
+    first_dir = build_hf_stub(tmp_path / "first", spec)
+    second_dir = build_hf_stub(tmp_path / "second", spec)
+
+    first_model = LlamaForCausalLM.from_pretrained(first_dir, local_files_only=True)
+    second_model = LlamaForCausalLM.from_pretrained(second_dir, local_files_only=True)
+
+    assert type(first_model) is type(second_model)
+    first_config = first_model.config.to_dict()
+    second_config = second_model.config.to_dict()
+    first_config.pop("_name_or_path", None)
+    second_config.pop("_name_or_path", None)
+    assert first_config == second_config
+    assert first_model.state_dict().keys() == second_model.state_dict().keys()
+    for key, first_tensor in first_model.state_dict().items():
+        second_tensor = second_model.state_dict()[key]
+        assert torch.equal(first_tensor, second_tensor)
 
 
 def test_build_hf_stub_writes_chat_template_and_special_token_metadata(tmp_path: Path) -> None:
@@ -182,7 +209,7 @@ def test_build_hf_stub_supports_larger_vocab_tokenizer_generation(tmp_path: Path
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
-    assert processor.get_piece_size() == spec.vocab_size
+    assert processor.get_piece_size() == spec.vocab_size  # pyright: ignore[reportAttributeAccessIssue]
     assert processor.unk_id() == 0
     assert processor.bos_id() == 1
     assert processor.eos_id() == 2

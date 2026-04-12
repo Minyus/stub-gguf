@@ -21,6 +21,7 @@ stub-gguf = "stub_gguf.cli:main"
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = ["runtime: strict local runtime smoke test for LM Studio and Ollama"]
 
 [tool.uv]
 package = true

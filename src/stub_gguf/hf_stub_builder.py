@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 import json
-import subprocess
 import shutil
 import sys
+import subprocess
 
 import torch
+from transformers import LlamaConfig, LlamaForCausalLM
 
 from stub_gguf.model_spec import TinyLlamaSpec
 
@@ -59,21 +61,26 @@ def _validate_spec(spec: TinyLlamaSpec) -> None:
 
 
 def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
-    config = {
-        "architectures": ["LlamaForCausalLM"],
-        "hidden_size": spec.hidden_size,
-        "intermediate_size": spec.intermediate_size,
-        "max_position_embeddings": spec.max_position_embeddings,
-        "model_type": "llama",
-        "num_attention_heads": spec.num_attention_heads,
-        "num_hidden_layers": spec.num_hidden_layers,
-        "num_key_value_heads": spec.num_key_value_heads,
-        "rope_theta": spec.rope_theta,
-        "rms_norm_eps": spec.rms_norm_eps,
+    config = _build_model_config(spec, _resolve_torch_dtype(spec.torch_dtype))
+    config_payload = {
+        "architectures": config.architectures,
+        "bos_token_id": config.bos_token_id,
+        "eos_token_id": config.eos_token_id,
+        "head_dim": config.head_dim,
+        "hidden_size": config.hidden_size,
+        "intermediate_size": config.intermediate_size,
+        "max_position_embeddings": config.max_position_embeddings,
+        "model_type": config.model_type,
+        "num_attention_heads": config.num_attention_heads,
+        "num_hidden_layers": config.num_hidden_layers,
+        "num_key_value_heads": config.num_key_value_heads,
+        "pad_token_id": config.pad_token_id,
+        "rope_theta": config.rope_theta,
+        "rms_norm_eps": config.rms_norm_eps,
         "torch_dtype": spec.torch_dtype,
-        "vocab_size": spec.vocab_size,
+        "vocab_size": config.vocab_size,
     }
-    (output_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "config.json").write_text(json.dumps(config_payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
@@ -174,25 +181,39 @@ def _special_tokens_map() -> dict[str, str]:
     }
 
 
+@contextmanager
+def _manual_seed(seed: int):
+    previous_state = torch.random.get_rng_state()
+    torch.manual_seed(seed)
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(previous_state)
+
+
+def _build_model_config(spec: TinyLlamaSpec, torch_dtype: torch.dtype) -> LlamaConfig:
+    config = LlamaConfig(architectures=["LlamaForCausalLM"])
+    config.hidden_size = spec.hidden_size
+    config.intermediate_size = spec.intermediate_size
+    config.max_position_embeddings = spec.max_position_embeddings
+    config.num_attention_heads = spec.num_attention_heads
+    config.num_hidden_layers = spec.num_hidden_layers
+    config.num_key_value_heads = spec.num_key_value_heads
+    config.head_dim = spec.head_dim
+    config.rope_theta = spec.rope_theta
+    config.rms_norm_eps = spec.rms_norm_eps
+    config.vocab_size = spec.vocab_size
+    config.bos_token_id = 1
+    config.eos_token_id = 2
+    config.pad_token_id = 2
+    config.torch_dtype = torch_dtype
+    return config
+
+
 def _write_weights(output_dir: Path, spec: TinyLlamaSpec) -> None:
     torch_dtype = _resolve_torch_dtype(spec.torch_dtype)
-    state_dict: dict[str, torch.Tensor] = {
-        "model.embed_tokens.weight": torch.zeros((spec.vocab_size, spec.hidden_size), dtype=torch_dtype),
-        "model.norm.weight": torch.ones((spec.hidden_size,), dtype=torch_dtype),
-        "lm_head.weight": torch.zeros((spec.vocab_size, spec.hidden_size), dtype=torch_dtype),
-    }
-
-    kv_hidden = spec.num_key_value_heads * spec.head_dim
-    for layer_idx in range(spec.num_hidden_layers):
-        prefix = f"model.layers.{layer_idx}"
-        state_dict[f"{prefix}.self_attn.q_proj.weight"] = torch.zeros((spec.hidden_size, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.self_attn.k_proj.weight"] = torch.zeros((kv_hidden, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.self_attn.v_proj.weight"] = torch.zeros((kv_hidden, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.self_attn.o_proj.weight"] = torch.zeros((spec.hidden_size, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.mlp.gate_proj.weight"] = torch.zeros((spec.intermediate_size, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.mlp.up_proj.weight"] = torch.zeros((spec.intermediate_size, spec.hidden_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.mlp.down_proj.weight"] = torch.zeros((spec.hidden_size, spec.intermediate_size), dtype=torch_dtype)
-        state_dict[f"{prefix}.input_layernorm.weight"] = torch.ones((spec.hidden_size,), dtype=torch_dtype)
-        state_dict[f"{prefix}.post_attention_layernorm.weight"] = torch.ones((spec.hidden_size,), dtype=torch_dtype)
-
-    torch.save(state_dict, output_dir / "pytorch_model.bin")
+    config = _build_model_config(spec, torch_dtype)
+    with _manual_seed(0):
+        model = LlamaForCausalLM(config)
+    model = model.to(torch_dtype)  # pyright: ignore[reportArgumentType]
+    torch.save(model.state_dict(), output_dir / "pytorch_model.bin")

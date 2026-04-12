@@ -53,6 +53,16 @@ docker run --rm -v "$PWD/dist:/app/dist" stub-gguf
 
 If LM Studio rejects the file, treat that as a compatibility failure and verify the generated GGUF with `uv run stub-gguf validate`.
 
+## Strict runtime smoke test
+
+Run the real local smoke test with:
+
+```bash
+uv run pytest -m runtime tests/test_runtime_smoke.py
+```
+
+It checks for the LM Studio import path at `~/.lmstudio/models/local-dev/stub/`, calls LM Studio through `http://localhost:1234/v1/chat/completions`, ensures `dist/stub.gguf` exists before the Ollama probe, runs `ollama create stub:6k -f ollama.modelfile`, and fails only if both LM Studio and Ollama fail to return a non-empty response within 1 second.
+
 ## Ollama
 
 1. Generate `dist/stub.gguf`.
