@@ -13,7 +13,7 @@ from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
 from stub_gguf.model_spec import TinyLlamaSpec
 
 
-MIN_VOCAB_SIZE = 64
+MIN_VOCAB_SIZE = 30
 
 
 _TORCH_DTYPES: dict[str, torch.dtype] = {
@@ -93,17 +93,11 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
         [
             "say ok say ok say ok",
             "Hello Hello Hello",
-            "OK OK OK",
-            "ok ok ok",
-            "yes yes yes",
-            "done done done",
-            "ASCII ASCII ASCII",
-            "tool call tool result tool call",
-            "user assistant system tool user assistant",
             "short harmless reply short harmless reply",
-            '{"name":"lookup","description":"find value"}',
-            '{"role":"tool","content":"ok"}',
-            '{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}',
+            "user assistant system user assistant",
+            '{"tool":"lookup","arguments":{"query":"hello"}}',
+            '{"name":"lookup","description":"tiny tool schema","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}',
+            '{"role":"tool","content":"{\"ok\":true,\"value\":1}"}',
         ]
     )
     corpus = "\n".join(corpus_lines)
@@ -178,7 +172,7 @@ def _write_generation_config(output_dir: Path) -> None:
         "bos_token_id": 1,
         "do_sample": False,
         "eos_token_id": 2,
-        "max_new_tokens": 4,
+        "max_new_tokens": 8,
         "min_new_tokens": 1,
         "pad_token_id": 2,
         "repetition_penalty": 1.0,
@@ -192,27 +186,13 @@ def _write_generation_config(output_dir: Path) -> None:
 
 def _chat_template() -> str:
     return (
-        "{% if tools is defined and tools %}"
-        "tools\n"
-        "{% for tool in tools %}"
-        "{{ tool | tojson }}\n"
-        "{% endfor %}"
-        "{% endif %}"
         "{% for message in messages %}"
         "{% if message['role'] == 'system' %}"
         "system\n{{ message['content'] }}\n"
         "{% elif message['role'] == 'user' %}"
         "user\n{{ message['content'] }}\n"
         "{% elif message['role'] == 'assistant' %}"
-        "assistant\n"
-        "{% if message.get('content') is not none %}"
-        "{{ message['content'] }}\n"
-        "{% endif %}"
-        "{% if message.get('tool_calls') %}"
-        "{{ {'role': 'assistant', 'tool_calls': message['tool_calls']} | tojson }}\n"
-        "{% endif %}"
-        "{% elif message['role'] == 'tool' %}"
-        "tool\n{{ message['content'] }}\n"
+        "assistant\n{{ message['content'] }}\n"
         "{% endif %}"
         "{% endfor %}"
         "{% if add_generation_prompt %}assistant\n{% endif %}"

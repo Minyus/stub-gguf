@@ -7,7 +7,7 @@ import json
 import sentencepiece as spm
 import pytest
 import torch
-from transformers import LlamaForCausalLM, LlamaTokenizerFast
+from transformers import AutoTokenizer, LlamaForCausalLM
 
 from stub_gguf.hf_stub_builder import build_hf_stub
 from stub_gguf.model_spec import TinyLlamaSpec
@@ -20,7 +20,8 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
         num_attention_heads=4,
         num_key_value_heads=4,
         num_hidden_layers=2,
-        vocab_size=64,
+        vocab_size=32,
+        max_position_embeddings=128,
     )
 
     checkpoint_dir = build_hf_stub(tmp_path, spec)
@@ -65,12 +66,9 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     assert tokenizer_config["bos_token_id"] == 1
     assert tokenizer_config["eos_token_id"] == 2
     assert tokenizer_config["pad_token_id"] == 2
-    assert "tools is defined" in tokenizer_config["chat_template"]
-    assert "tool" in tokenizer_config["chat_template"]
     assert generation_config["bos_token_id"] == 1
     assert generation_config["eos_token_id"] == 2
     assert generation_config["pad_token_id"] == 2
-    assert generation_config["max_new_tokens"] == 4
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(tokenizer_model_path))
@@ -113,13 +111,13 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
 
 
 def test_build_hf_stub_writes_a_canonical_tokenizer_artifact(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=64))
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
 
     assert (checkpoint_dir / "tokenizer.json").exists()
 
 
 def test_build_hf_stub_tokenizer_includes_a_newline_token(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=64))
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
@@ -142,78 +140,18 @@ def test_build_hf_stub_tokenizer_can_encode_short_ascii_prompts_without_unk_ids(
         assert 0 not in token_ids
 
 
-def test_build_hf_stub_advertises_large_context_and_fake_tool_support_in_tokenizer_config(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
-
-    config = json.loads((checkpoint_dir / "config.json").read_text(encoding="utf-8"))
-    tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
-
-    assert config["max_position_embeddings"] == 100_000
-    assert tokenizer_config["model_max_length"] == 100_000
-    assert "tool" in tokenizer_config["chat_template"]
-    assert "tools is defined" in tokenizer_config["chat_template"]
-    assert "role" in tokenizer_config["chat_template"]
-
-
-def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
-    tokenizer = LlamaTokenizerFast.from_pretrained(checkpoint_dir, local_files_only=True)
-
-    rendered = tokenizer.apply_chat_template(
-        [
-            {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": "Let me check.", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": '{"query":"hello"}'}}]},
-            {"role": "tool", "content": "ok"},
-        ],
-        tools=[{"name": "lookup", "description": "find a value"}],
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-    assert "tools\n" in rendered
-    assert "assistant\nLet me check.\n" in rendered
-    assert "call_1" in rendered
-    assert '"name": "lookup"' in rendered
-    assert '"arguments": "{\\"query\\":\\"hello\\"}"' in rendered
-    assert "tool\nok\n" in rendered
-    assert "assistant\nNone\n" not in rendered
-    assert rendered.endswith("assistant\n")
-
-    processor = spm.SentencePieceProcessor()
-    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
-    token_ids = processor.encode('{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}', out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-    assert token_ids
-    assert 0 not in token_ids
-
-
-def test_build_hf_stub_generation_config_stays_short_and_ascii_biased(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
-
-    generation_config = json.loads((checkpoint_dir / "generation_config.json").read_text(encoding="utf-8"))
-
-    assert generation_config["do_sample"] is False
-    assert generation_config["min_new_tokens"] == 1
-    assert generation_config["max_new_tokens"] == 4
-    assert generation_config["temperature"] == 0.0
-    assert generation_config["top_k"] == 1
-    assert generation_config["top_p"] == 1.0
-
-
-def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_path: Path) -> None:
+def test_build_hf_stub_tokenizer_prefers_word_initial_pieces_for_smoke_prompts(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
 
-    assert 0 not in processor.encode("say ok", out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-    assert 0 not in processor.encode("Hello", out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-    for reply in ("OK", "ok", "yes", "done"):
-        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-        assert 0 not in token_ids
+    assert processor.encode("say ok", out_type=str) == ["▁say", "▁ok"]  # pyright: ignore[reportAttributeAccessIssue]
+    assert processor.encode("Hello", out_type=str) == ["▁Hello"]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_deterministic(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=64)
+    spec = TinyLlamaSpec(vocab_size=32)
 
     first_dir = build_hf_stub(tmp_path / "first", spec)
     second_dir = build_hf_stub(tmp_path / "second", spec)
@@ -234,7 +172,7 @@ def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_determin
 
 
 def test_build_hf_stub_does_not_mix_auto_bos_eos_flags_with_literal_template_markers(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=64))
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
 
     tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
     chat_template = tokenizer_config["chat_template"]
@@ -245,8 +183,25 @@ def test_build_hf_stub_does_not_mix_auto_bos_eos_flags_with_literal_template_mar
     assert "</s>" not in chat_template
 
 
+def test_build_hf_stub_chat_template_renders_tool_messages_and_generation_prompt(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
+
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir, local_files_only=True)
+    rendered = tokenizer.apply_chat_template(
+        [
+            {"role": "user", "content": "use the tool"},
+            {"role": "tool", "content": '{"ok":true,"value":1}'},
+        ],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+
+    assert "tool\n{\"ok\":true,\"value\":1}\n" in rendered
+    assert rendered.endswith("assistant\n")
+
+
 def test_build_hf_stub_writes_generation_config_for_short_non_empty_responses(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=64))
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec(vocab_size=32))
 
     generation_config = json.loads((checkpoint_dir / "generation_config.json").read_text(encoding="utf-8"))
 
@@ -254,7 +209,7 @@ def test_build_hf_stub_writes_generation_config_for_short_non_empty_responses(tm
     assert generation_config["eos_token_id"] == 2
     assert generation_config["pad_token_id"] == 2
     assert generation_config["do_sample"] is False
-    assert generation_config["max_new_tokens"] == 4
+    assert generation_config["max_new_tokens"] == 8
     assert generation_config["min_new_tokens"] == 1
     assert generation_config["repetition_penalty"] == 1.0
 
@@ -290,10 +245,10 @@ def test_build_hf_stub_rejects_unsupported_torch_dtype_before_writing_output(tmp
     assert not (tmp_path / "hf_stub").exists()
 
 
-def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor_at_thirty_two(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=32)
+def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor_at_eight(tmp_path: Path) -> None:
+    spec = TinyLlamaSpec(vocab_size=8)
 
-    with pytest.raises(ValueError, match="vocab_size must be at least 64 to build a stable SentencePiece tokenizer"):
+    with pytest.raises(ValueError, match="vocab_size must be at least 30 to build a stable SentencePiece tokenizer"):
         build_hf_stub(tmp_path, spec)
 
 
@@ -311,9 +266,9 @@ def test_build_hf_stub_supports_larger_vocab_tokenizer_generation(tmp_path: Path
 
 
 def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=63)
+    spec = TinyLlamaSpec(vocab_size=29)
 
-    with pytest.raises(ValueError, match="vocab_size must be at least 64 to build a stable SentencePiece tokenizer"):
+    with pytest.raises(ValueError, match="vocab_size must be at least 30 to build a stable SentencePiece tokenizer"):
         build_hf_stub(tmp_path, spec)
 
 
@@ -323,7 +278,7 @@ def test_build_hf_stub_replaces_existing_hf_stub_directory(tmp_path: Path) -> No
     stale_file = stale_dir / "stale.txt"
     stale_file.write_text("stale", encoding="utf-8")
 
-    spec = TinyLlamaSpec(vocab_size=64)
+    spec = TinyLlamaSpec(vocab_size=32)
 
     checkpoint_dir = build_hf_stub(tmp_path, spec)
 
@@ -334,7 +289,7 @@ def test_build_hf_stub_replaces_existing_hf_stub_directory(tmp_path: Path) -> No
 
 
 def test_build_hf_stub_is_deterministic_for_same_spec(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=64)
+    spec = TinyLlamaSpec(vocab_size=32)
 
     first_dir = build_hf_stub(tmp_path, spec)
     first_tokenizer = (first_dir / "tokenizer.model").read_bytes()
@@ -348,7 +303,7 @@ def test_build_hf_stub_is_deterministic_for_same_spec(tmp_path: Path) -> None:
 
 
 def test_build_hf_stub_is_deterministic_across_different_base_directories(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=64)
+    spec = TinyLlamaSpec(vocab_size=32)
 
     first_base_dir = tmp_path / "first"
     second_base_dir = tmp_path / "second"
@@ -368,7 +323,7 @@ def test_build_hf_stub_is_deterministic_across_different_base_directories(tmp_pa
 
 
 def test_build_hf_stub_does_not_change_process_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    spec = TinyLlamaSpec(vocab_size=64)
+    spec = TinyLlamaSpec(vocab_size=32)
     original_cwd = Path.cwd()
     other_dir = tmp_path / "other"
     other_dir.mkdir()

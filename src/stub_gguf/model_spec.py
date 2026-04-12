@@ -26,7 +26,7 @@ def build_model_spec() -> ModelSpec:
         ),
         "stub.fixed_response": (MetadataValueType.STRING, "Noted"),
         "stub.tool_use": (MetadataValueType.BOOL, True),
-        "stub.context_length": (MetadataValueType.UINT64, 100_000),
+        "stub.context_length": (MetadataValueType.UINT64, 1_000_000),
         "tokenizer.ggml.model": (MetadataValueType.STRING, "stub-wordpiece"),
         "tokenizer.ggml.tokens": (
             MetadataValueType.ARRAY,
@@ -40,7 +40,7 @@ def build_model_spec() -> ModelSpec:
             MetadataValueType.ARRAY,
             (MetadataValueType.UINT32, [3, 3, 1]),
         ),
-        "llama.context_length": (MetadataValueType.UINT64, 100_000),
+        "llama.context_length": (MetadataValueType.UINT64, 1_000_000),
         "llama.embedding_length": (MetadataValueType.UINT32, 4),
         "llama.block_count": (MetadataValueType.UINT32, 1),
         "llama.feed_forward_length": (MetadataValueType.UINT32, 4),
@@ -68,7 +68,7 @@ class TinyLlamaSpec:
     num_key_value_heads: int = 4
     num_hidden_layers: int = 2
     vocab_size: int = 64
-    max_position_embeddings: int = 100_000
+    max_position_embeddings: int = 128
     rope_theta: float = 10000.0
     rms_norm_eps: float = 1e-5
     torch_dtype: str = "float32"
