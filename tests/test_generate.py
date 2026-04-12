@@ -222,7 +222,9 @@ def test_generate_artifact_real_converter_input_includes_chat_metadata_files(tmp
             tokenizer_config = json.loads((model_dir / 'tokenizer_config.json').read_text(encoding='utf-8'))
             generation_config = json.loads((model_dir / 'generation_config.json').read_text(encoding='utf-8'))
             config = json.loads((model_dir / 'config.json').read_text(encoding='utf-8'))
-            assert 'tools is defined' in tokenizer_config['chat_template']
+            assert 'tool' in tokenizer_config['chat_template']
+            assert 'tools' in tokenizer_config['chat_template']
+            assert 'role' in tokenizer_config['chat_template']
             outfile.write_text(f"CHAT:{'chat_template' in tokenizer_config}:{config['max_position_embeddings']}:{generation_config['max_new_tokens']}", encoding='utf-8')
             """
         ),
