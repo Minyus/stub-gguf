@@ -142,7 +142,7 @@ def test_build_hf_stub_tokenizer_can_encode_short_ascii_prompts_without_unk_ids(
         assert 0 not in token_ids
 
 
-def test_build_hf_stub_tokenizer_can_encode_common_reply_tokens_without_unk_ids(tmp_path: Path) -> None:
+def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
     processor = spm.SentencePieceProcessor()
@@ -156,22 +156,26 @@ def test_build_hf_stub_tokenizer_can_encode_common_reply_tokens_without_unk_ids(
 def test_build_hf_stub_advertises_large_context_and_fake_tool_support_in_tokenizer_config(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
+    config = json.loads((checkpoint_dir / "config.json").read_text(encoding="utf-8"))
     tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
 
+    assert config["max_position_embeddings"] == 100_000
     assert tokenizer_config["model_max_length"] == 100_000
     assert "tools is defined" in tokenizer_config["chat_template"]
     assert "tool" in tokenizer_config["chat_template"]
 
 
-def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_path: Path) -> None:
+def test_build_hf_stub_generation_config_stays_short_and_ascii_biased(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
-    processor = spm.SentencePieceProcessor()
-    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+    generation_config = json.loads((checkpoint_dir / "generation_config.json").read_text(encoding="utf-8"))
 
-    for reply in ("OK", "ok", "yes", "done"):
-        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-        assert 0 not in token_ids
+    assert generation_config["do_sample"] is False
+    assert generation_config["min_new_tokens"] == 1
+    assert generation_config["max_new_tokens"] == 4
+    assert generation_config["temperature"] == 0.0
+    assert generation_config["top_k"] == 1
+    assert generation_config["top_p"] == 1.0
 
 
 def test_build_hf_stub_tokenizer_prefers_word_initial_pieces_for_smoke_prompts(tmp_path: Path) -> None:
