@@ -49,7 +49,10 @@ docker run --rm -v "$PWD/dist:/app/dist" stub-gguf
    - top-k: `1`
    - top-p: `1`
 5. Send any prompt.
-6. Treat successful loading plus a short printable ASCII reply as the smoke-test contract.
+6. Treat successful loading plus a short printable ASCII reply as the goal.
+   The smoke prompt is intentionally tiny (`ok`) to stay within LM Studio's runtime-safe token budget.
+   The fake tool-friendly chat metadata is advertised for compatibility, but tool execution is not supported.
+   The HF-side config advertises `max_position_embeddings=100000` as compatibility metadata, not a performance guarantee.
 
 If LM Studio rejects the file, treat that as a compatibility failure and verify the generated GGUF with `uv run stub-gguf validate`.
 

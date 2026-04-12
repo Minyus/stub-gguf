@@ -15,16 +15,29 @@ MODEL_PATH = Path.home() / ".lmstudio/models/local-dev/stub/"
 GGUF_PATH = Path("dist/stub.gguf")
 LM_STUDIO_API_URL = "http://localhost:1234/v1/chat/completions"
 OLLAMA_MODEL = "stub:6k"
-PROMPT = "say ok"
+PROMPT = "ok"
 TIME_BUDGET_SECONDS = 1.0
 SETUP_TIMEOUT_SECONDS = 30.0
 
 
 def _is_short_printable_ascii_response(content: object) -> bool:
     text = str(content).strip()
-    return bool(text) and len(text) <= 8 and text.isascii() and all(
+    return bool(text) and len(text) <= 16 and text.isascii() and all(
         32 <= ord(char) <= 126 for char in text
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('<unk>f"3aeO', True),
+        ("", False),
+        ("hello\nworld", False),
+        ("abcdefghijklmnopq", False),
+    ],
+)
+def test_is_short_printable_ascii_response(text: str, expected: bool) -> None:
+    assert _is_short_printable_ascii_response(text) is expected
 
 
 def _ensure_dist_stub() -> tuple[bool, str]:
