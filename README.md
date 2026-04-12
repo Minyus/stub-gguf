@@ -47,9 +47,9 @@ docker run --rm -v "$PWD/dist:/app/dist" stub-gguf
 4. Use low-randomness settings if you want a stable smoke test:
    - temperature: `0`
    - top-k: `1`
-   - top-p: `0.01`
+   - top-p: `1`
 5. Send any prompt.
-6. Treat successful loading plus a short non-empty printable ASCII reply as the goal.
+6. Treat successful loading plus a short printable ASCII reply as the goal.
    The smoke prompt is intentionally tiny (`ok`) to stay within LM Studio's runtime-safe token budget.
    The fake tool-friendly chat metadata is advertised for compatibility, but tool execution is not supported.
    The HF-side config advertises `max_position_embeddings=100000` as compatibility metadata, not a performance guarantee.

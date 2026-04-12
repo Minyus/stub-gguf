@@ -20,6 +20,11 @@ TIME_BUDGET_SECONDS = 1.0
 SETUP_TIMEOUT_SECONDS = 30.0
 
 
+def _is_short_printable_ascii_response(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and len(stripped) <= 8 and all(32 <= ord(char) <= 126 for char in stripped)
+
+
 def _ensure_dist_stub() -> tuple[bool, str]:
     if GGUF_PATH.exists():
         return True, "artifact already present"
@@ -72,9 +77,9 @@ def _probe_lm_studio(timeout_seconds: float = TIME_BUDGET_SECONDS) -> tuple[bool
 
             data = json.loads(body)
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if str(content).strip():
+            if _is_short_printable_ascii_response(str(content)):
                 return True, f"lm-studio ok via {candidate} in {elapsed:.3f}s"
-            errors.append(f"{candidate}: empty response")
+            errors.append(f"{candidate}: short printable ASCII response")
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
             errors.append(f"{candidate}: HTTP {exc.code} {error_body}")
@@ -115,8 +120,8 @@ def _probe_ollama(timeout_seconds: float = TIME_BUDGET_SECONDS) -> tuple[bool, s
         elapsed = time.monotonic() - started
         if elapsed > timeout_seconds:
             return False, f"ollama failed: exceeded {timeout_seconds:.1f}s budget ({elapsed:.3f}s)"
-        if not result.stdout.strip():
-            return False, f"ollama failed: empty response after successful create ({create_result.stdout.strip()})"
+        if not _is_short_printable_ascii_response(result.stdout):
+            return False, f"ollama failed: short printable ASCII response after successful create ({create_result.stdout.strip()})"
         return True, f"ollama ok in {elapsed:.3f}s"
     except subprocess.TimeoutExpired as exc:
         return False, f"ollama failed: exceeded {timeout_seconds:.1f}s budget ({exc.timeout:.3f}s)"
@@ -132,7 +137,7 @@ def test_runtime_smoke() -> None:
         return
 
     raise AssertionError(
-        "Runtime smoke failed: neither LM Studio nor Ollama returned a non-empty response within 1 second.\n"
+        "Runtime smoke failed: neither LM Studio nor Ollama returned a short printable ASCII response within 1 second.\n"
         f"LM Studio: {lm_detail}\n"
         f"Ollama: {ollama_detail}"
     )
