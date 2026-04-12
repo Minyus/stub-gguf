@@ -142,17 +142,6 @@ def test_build_hf_stub_tokenizer_can_encode_short_ascii_prompts_without_unk_ids(
         assert 0 not in token_ids
 
 
-def test_build_hf_stub_tokenizer_encodes_ok_ok_yes_done_without_unk_ids(tmp_path: Path) -> None:
-    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
-
-    processor = spm.SentencePieceProcessor()
-    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
-
-    for reply in ("OK", "ok", "yes", "done"):
-        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
-        assert 0 not in token_ids
-
-
 def test_build_hf_stub_advertises_large_context_and_fake_tool_support_in_tokenizer_config(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
@@ -162,7 +151,7 @@ def test_build_hf_stub_advertises_large_context_and_fake_tool_support_in_tokeniz
     assert config["max_position_embeddings"] == 100_000
     assert tokenizer_config["model_max_length"] == 100_000
     assert "tool" in tokenizer_config["chat_template"]
-    assert "tools" in tokenizer_config["chat_template"]
+    assert "tools is defined" in tokenizer_config["chat_template"]
     assert "role" in tokenizer_config["chat_template"]
 
 
@@ -187,6 +176,9 @@ def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_
 
     assert processor.encode("say ok", out_type=str) == ["▁say", "▁ok"]  # pyright: ignore[reportAttributeAccessIssue]
     assert processor.encode("Hello", out_type=str) == ["▁Hello"]  # pyright: ignore[reportAttributeAccessIssue]
+    for reply in ("OK", "ok", "yes", "done"):
+        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
+        assert 0 not in token_ids
 
 
 def test_build_hf_stub_uses_transformers_llama_checkpoint_layout_and_is_deterministic(tmp_path: Path) -> None:
