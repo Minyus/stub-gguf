@@ -171,7 +171,10 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     assert '"name": "lookup"' in rendered
     assert rendered.endswith("assistant\n")
 
-    token_ids = tokenizer.encode('{"role":"tool"}', add_special_tokens=False)
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+    token_ids = processor.encode('{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}', out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
+    assert token_ids
     assert 0 not in token_ids
 
 
@@ -279,10 +282,10 @@ def test_build_hf_stub_rejects_unsupported_torch_dtype_before_writing_output(tmp
     assert not (tmp_path / "hf_stub").exists()
 
 
-def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor_at_eight(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=8)
+def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor_at_thirty_two(tmp_path: Path) -> None:
+    spec = TinyLlamaSpec(vocab_size=32)
 
-    with pytest.raises(ValueError, match="vocab_size must be at least 30 to build a stable SentencePiece tokenizer"):
+    with pytest.raises(ValueError, match="vocab_size must be at least 64 to build a stable SentencePiece tokenizer"):
         build_hf_stub(tmp_path, spec)
 
 
@@ -300,9 +303,9 @@ def test_build_hf_stub_supports_larger_vocab_tokenizer_generation(tmp_path: Path
 
 
 def test_build_hf_stub_rejects_vocab_sizes_below_sentencepiece_floor(tmp_path: Path) -> None:
-    spec = TinyLlamaSpec(vocab_size=29)
+    spec = TinyLlamaSpec(vocab_size=63)
 
-    with pytest.raises(ValueError, match="vocab_size must be at least 30 to build a stable SentencePiece tokenizer"):
+    with pytest.raises(ValueError, match="vocab_size must be at least 64 to build a stable SentencePiece tokenizer"):
         build_hf_stub(tmp_path, spec)
 
 

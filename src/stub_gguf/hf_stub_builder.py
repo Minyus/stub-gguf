@@ -13,7 +13,7 @@ from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
 from stub_gguf.model_spec import TinyLlamaSpec
 
 
-MIN_VOCAB_SIZE = 30
+MIN_VOCAB_SIZE = 64
 
 
 _TORCH_DTYPES: dict[str, torch.dtype] = {
