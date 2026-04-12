@@ -179,7 +179,7 @@ def test_build_hf_stub_generation_config_stays_short_and_ascii_biased(tmp_path: 
     assert generation_config["top_p"] == 1.0
 
 
-def test_build_hf_stub_tokenizer_prefers_word_initial_pieces_for_smoke_prompts(tmp_path: Path) -> None:
+def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
     processor = spm.SentencePieceProcessor()
