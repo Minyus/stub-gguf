@@ -160,15 +160,22 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     tokenizer = LlamaTokenizerFast.from_pretrained(checkpoint_dir, local_files_only=True)
 
     rendered = tokenizer.apply_chat_template(
-        [{"role": "user", "content": "hello"}, {"role": "tool", "content": "ok"}],
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": '{"query":"hello"}'}}]},
+            {"role": "tool", "content": "ok"},
+        ],
         tools=[{"name": "lookup", "description": "find a value"}],
         tokenize=False,
         add_generation_prompt=True,
     )
 
     assert "tools\n" in rendered
-    assert "tool\nok\n" in rendered
+    assert "call_1" in rendered
     assert '"name": "lookup"' in rendered
+    assert '"arguments": "{\\"query\\":\\"hello\\"}"' in rendered
+    assert "tool\nok\n" in rendered
+    assert "assistant\nNone\n" not in rendered
     assert rendered.endswith("assistant\n")
 
     processor = spm.SentencePieceProcessor()
