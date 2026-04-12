@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib
 import json
 import os
 import subprocess
@@ -9,9 +10,12 @@ import textwrap
 
 import pytest
 
-from stub_gguf import generate as generate_module
 from stub_gguf.model_spec import TinyLlamaSpec
 from stub_gguf.model_spec import DEFAULT_OUTPUT
+
+
+def _generate_module():
+    return importlib.import_module("stub_gguf.generate")
 
 
 def test_generate_artifact_orchestrates_stub_build_and_conversion(monkeypatch, tmp_path: Path) -> None:
@@ -41,6 +45,7 @@ def test_generate_artifact_orchestrates_stub_build_and_conversion(monkeypatch, t
         calls["run_conversion"] = (model_dir, converted_output)
         converted_output.write_text("converted", encoding="utf-8")
 
+    generate_module = _generate_module()
     monkeypatch.setattr(generate_module.tempfile, "TemporaryDirectory", FakeTemporaryDirectory)
     monkeypatch.setattr(generate_module, "resolve_convert_script", lambda: Path("/tmp/convert_hf_to_gguf.py"))
     monkeypatch.setattr(generate_module, "build_hf_stub", fake_build_hf_stub)
@@ -88,6 +93,7 @@ def test_generate_artifact_cleans_up_workspace_on_failure(monkeypatch, tmp_path:
         converted_output.write_text("partial", encoding="utf-8")
         raise RuntimeError("boom")
 
+    generate_module = _generate_module()
     monkeypatch.setattr(generate_module.tempfile, "TemporaryDirectory", FakeTemporaryDirectory)
     monkeypatch.setattr(generate_module, "resolve_convert_script", lambda: Path("/tmp/convert_hf_to_gguf.py"))
     monkeypatch.setattr(generate_module, "build_hf_stub", fake_build_hf_stub)
@@ -112,6 +118,7 @@ def test_generate_artifact_fails_before_building_stub_when_converter_missing(mon
         calls["build_hf_stub"] = True
         raise AssertionError("build_hf_stub should not run when converter is missing")
 
+    generate_module = _generate_module()
     monkeypatch.setattr(generate_module, "resolve_convert_script", fake_resolve_convert_script)
     monkeypatch.setattr(generate_module, "build_hf_stub", fake_build_hf_stub)
 
@@ -148,6 +155,7 @@ def test_generate_artifact_only_replaces_final_output_after_success(monkeypatch,
         temp_output_paths.append(converted_output)
         converted_output.write_text("converted", encoding="utf-8")
 
+    generate_module = _generate_module()
     monkeypatch.setattr(generate_module.tempfile, "TemporaryDirectory", FakeTemporaryDirectory)
     monkeypatch.setattr(generate_module, "resolve_convert_script", lambda: Path("/tmp/convert_hf_to_gguf.py"))
     monkeypatch.setattr(generate_module, "build_hf_stub", fake_build_hf_stub)
@@ -191,6 +199,7 @@ def test_generate_artifact_uses_real_converter_script(tmp_path: Path, monkeypatc
     )
     monkeypatch.setenv("LLAMA_CPP_CONVERT", str(script_path))
 
+    generate_module = _generate_module()
     result = generate_module.generate_artifact(output_path)
 
     assert result == output_path
@@ -232,6 +241,7 @@ def test_generate_artifact_real_converter_input_includes_chat_metadata_files(tmp
     )
     monkeypatch.setenv("LLAMA_CPP_CONVERT", str(script_path))
 
+    generate_module = _generate_module()
     result = generate_module.generate_artifact(output_path)
 
     assert result == output_path

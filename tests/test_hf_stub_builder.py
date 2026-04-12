@@ -171,6 +171,9 @@ def test_build_hf_stub_renders_tool_use_chat_template(tmp_path: Path) -> None:
     assert '"name": "lookup"' in rendered
     assert rendered.endswith("assistant\n")
 
+    token_ids = tokenizer.encode('{"role":"tool"}', add_special_tokens=False)
+    assert 0 not in token_ids
+
 
 def test_build_hf_stub_generation_config_stays_short_and_ascii_biased(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
