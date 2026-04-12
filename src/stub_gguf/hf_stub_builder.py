@@ -92,16 +92,15 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     corpus_lines.extend(
         [
             "say ok say ok say ok",
-            "say say say say say",
-            "say ok say ok say ok say ok",
-            "Hello Hello Hello Hello Hello",
-            "Hello",
-            "Hello Hello",
+            "Hello Hello Hello",
             "OK OK OK",
             "ok ok ok",
             "yes yes yes",
             "done done done",
+            "ASCII ASCII ASCII",
             "tool call tool result tool call",
+            "user assistant system tool user assistant",
+            "short harmless reply short harmless reply",
         ]
     )
     corpus = "\n".join(corpus_lines)
