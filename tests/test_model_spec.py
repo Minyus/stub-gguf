@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 import pytest
 
 from stub_gguf.model_spec import DEFAULT_OUTPUT
@@ -22,7 +23,7 @@ def test_tiny_llama_spec_uses_converter_friendly_values() -> None:
     assert spec.num_key_value_heads == 4
     assert spec.num_hidden_layers == 2
     assert spec.vocab_size >= 16
-    assert spec.max_position_embeddings == 128
+    assert spec.max_position_embeddings == 100_000
     assert spec.rope_theta == 10000.0
     assert spec.rms_norm_eps == 1e-5
     assert spec.torch_dtype == "float32"
@@ -46,6 +47,6 @@ def test_tiny_llama_spec_allows_valid_grouped_query_attention() -> None:
         ({"hidden_size": 18, "num_attention_heads": 6, "num_key_value_heads": 4}, "num_attention_heads must be divisible by num_key_value_heads"),
     ],
 )
-def test_tiny_llama_spec_rejects_invalid_configurations(kwargs: dict[str, int], message: str) -> None:
+def test_tiny_llama_spec_rejects_invalid_configurations(kwargs: dict[str, Any], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         TinyLlamaSpec(**kwargs)

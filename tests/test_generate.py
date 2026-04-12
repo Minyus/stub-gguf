@@ -221,7 +221,8 @@ def test_generate_artifact_real_converter_input_includes_chat_metadata_files(tmp
 
             tokenizer_config = json.loads((model_dir / 'tokenizer_config.json').read_text(encoding='utf-8'))
             generation_config = json.loads((model_dir / 'generation_config.json').read_text(encoding='utf-8'))
-            outfile.write_text(f"CHAT:{'chat_template' in tokenizer_config}:{generation_config['min_new_tokens']}", encoding='utf-8')
+            config = json.loads((model_dir / 'config.json').read_text(encoding='utf-8'))
+            outfile.write_text(f"CHAT:{'chat_template' in tokenizer_config}:{config['max_position_embeddings']}:{generation_config['max_new_tokens']}", encoding='utf-8')
             """
         ),
         encoding="utf-8",
@@ -231,7 +232,7 @@ def test_generate_artifact_real_converter_input_includes_chat_metadata_files(tmp
     result = generate_module.generate_artifact(output_path)
 
     assert result == output_path
-    assert output_path.read_text(encoding="utf-8") == "CHAT:True:1"
+    assert output_path.read_text(encoding="utf-8") == "CHAT:True:100000:4"
 
 
 def test_default_output_is_dist_stub_gguf() -> None:

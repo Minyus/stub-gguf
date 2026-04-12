@@ -21,7 +21,6 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
         num_key_value_heads=4,
         num_hidden_layers=2,
         vocab_size=32,
-        max_position_embeddings=128,
     )
 
     checkpoint_dir = build_hf_stub(tmp_path, spec)
@@ -57,7 +56,7 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     assert config["num_key_value_heads"] == spec.num_key_value_heads
     assert config["num_hidden_layers"] == spec.num_hidden_layers
     assert config["vocab_size"] == spec.vocab_size
-    assert config["max_position_embeddings"] == spec.max_position_embeddings
+    assert config["max_position_embeddings"] == 100_000
     assert config["unk_token_id"] == 0
 
     tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
@@ -66,9 +65,12 @@ def test_build_hf_stub_writes_a_minimal_hf_checkpoint(tmp_path: Path) -> None:
     assert tokenizer_config["bos_token_id"] == 1
     assert tokenizer_config["eos_token_id"] == 2
     assert tokenizer_config["pad_token_id"] == 2
+    assert "tools is defined" in tokenizer_config["chat_template"]
+    assert "tool" in tokenizer_config["chat_template"]
     assert generation_config["bos_token_id"] == 1
     assert generation_config["eos_token_id"] == 2
     assert generation_config["pad_token_id"] == 2
+    assert generation_config["max_new_tokens"] == 4
 
     processor = spm.SentencePieceProcessor()
     assert processor.Load(str(tokenizer_model_path))
@@ -140,6 +142,38 @@ def test_build_hf_stub_tokenizer_can_encode_short_ascii_prompts_without_unk_ids(
         assert 0 not in token_ids
 
 
+def test_build_hf_stub_tokenizer_can_encode_common_reply_tokens_without_unk_ids(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
+
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+
+    for reply in ("OK", "ok", "yes", "done"):
+        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
+        assert 0 not in token_ids
+
+
+def test_build_hf_stub_advertises_large_context_and_fake_tool_support_in_tokenizer_config(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
+
+    tokenizer_config = json.loads((checkpoint_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
+
+    assert tokenizer_config["model_max_length"] == 100_000
+    assert "tools is defined" in tokenizer_config["chat_template"]
+    assert "tool" in tokenizer_config["chat_template"]
+
+
+def test_build_hf_stub_tokenizer_prefers_short_printable_ascii_reply_pieces(tmp_path: Path) -> None:
+    checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
+
+    processor = spm.SentencePieceProcessor()
+    assert processor.Load(str(checkpoint_dir / "tokenizer.model"))
+
+    for reply in ("OK", "ok", "yes", "done"):
+        token_ids = processor.encode(reply, out_type=int)  # pyright: ignore[reportAttributeAccessIssue]
+        assert 0 not in token_ids
+
+
 def test_build_hf_stub_tokenizer_prefers_word_initial_pieces_for_smoke_prompts(tmp_path: Path) -> None:
     checkpoint_dir = build_hf_stub(tmp_path, TinyLlamaSpec())
 
@@ -192,7 +226,7 @@ def test_build_hf_stub_writes_generation_config_for_short_non_empty_responses(tm
     assert generation_config["eos_token_id"] == 2
     assert generation_config["pad_token_id"] == 2
     assert generation_config["do_sample"] is False
-    assert generation_config["max_new_tokens"] == 8
+    assert generation_config["max_new_tokens"] == 4
     assert generation_config["min_new_tokens"] == 1
     assert generation_config["repetition_penalty"] == 1.0
 
