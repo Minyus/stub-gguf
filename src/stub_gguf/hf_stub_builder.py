@@ -86,18 +86,24 @@ def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
 
 def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     sentencepiece_vocab_size = spec.vocab_size
-    corpus_lines = [
-        "say ok say ok say ok",
-        "Hello Hello Hello",
-        "OK OK OK",
-        "ok ok ok",
-        "yes yes yes",
-        "done done done",
-        "ASCII ASCII ASCII",
-        "tool call tool result tool call",
-        "user assistant system tool user assistant",
-        "short harmless reply short harmless reply",
-    ] * 8
+    corpus_tokens = [f"token_{idx:04d}" for idx in range(max(sentencepiece_vocab_size * 2, 64))]
+    corpus_lines = [" ".join(corpus_tokens[idx : idx + 16]) for idx in range(0, len(corpus_tokens), 16)]
+    corpus_lines.extend(" ".join(reversed(corpus_tokens[idx : idx + 16])) for idx in range(0, len(corpus_tokens), 16))
+    corpus_lines.extend(
+        [
+            "say ok say ok say ok",
+            "say say say say say",
+            "say ok say ok say ok say ok",
+            "Hello Hello Hello Hello Hello",
+            "Hello",
+            "Hello Hello",
+            "OK OK OK",
+            "ok ok ok",
+            "yes yes yes",
+            "done done done",
+            "tool call tool result tool call",
+        ]
+    )
     corpus = "\n".join(corpus_lines)
     corpus_path = output_dir / "tokenizer_corpus.txt"
     prefix = output_dir / "_tokenizer"
@@ -187,7 +193,7 @@ def _chat_template() -> str:
         "{% if tools is defined and tools %}"
         "tools\n"
         "{% for tool in tools %}"
-        "{{ tool }}\n"
+        "{{ tool | tojson }}\n"
         "{% endfor %}"
         "{% endif %}"
         "{% for message in messages %}"
