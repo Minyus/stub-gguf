@@ -86,17 +86,18 @@ def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
 
 def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     sentencepiece_vocab_size = spec.vocab_size
-    corpus_tokens = [f"token_{idx:04d}" for idx in range(max(sentencepiece_vocab_size * 2, 64))]
-    corpus_lines = [" ".join(corpus_tokens[idx : idx + 16]) for idx in range(0, len(corpus_tokens), 16)]
-    corpus_lines.extend(" ".join(reversed(corpus_tokens[idx : idx + 16])) for idx in range(0, len(corpus_tokens), 16))
-    corpus_lines.extend(
-        [
-            "say ok say ok say ok",
-            "Hello Hello Hello",
-            "short harmless reply short harmless reply",
-            "user assistant system user assistant",
-        ]
-    )
+    corpus_lines = [
+        "say ok say ok say ok",
+        "Hello Hello Hello",
+        "OK OK OK",
+        "ok ok ok",
+        "yes yes yes",
+        "done done done",
+        "ASCII ASCII ASCII",
+        "tool call tool result tool call",
+        "user assistant system tool user assistant",
+        "short harmless reply short harmless reply",
+    ] * 8
     corpus = "\n".join(corpus_lines)
     corpus_path = output_dir / "tokenizer_corpus.txt"
     prefix = output_dir / "_tokenizer"
@@ -169,7 +170,7 @@ def _write_generation_config(output_dir: Path) -> None:
         "bos_token_id": 1,
         "do_sample": False,
         "eos_token_id": 2,
-        "max_new_tokens": 8,
+        "max_new_tokens": 4,
         "min_new_tokens": 1,
         "pad_token_id": 2,
         "repetition_penalty": 1.0,
@@ -183,6 +184,12 @@ def _write_generation_config(output_dir: Path) -> None:
 
 def _chat_template() -> str:
     return (
+        "{% if tools is defined and tools %}"
+        "tools\n"
+        "{% for tool in tools %}"
+        "{{ tool }}\n"
+        "{% endfor %}"
+        "{% endif %}"
         "{% for message in messages %}"
         "{% if message['role'] == 'system' %}"
         "system\n{{ message['content'] }}\n"
@@ -190,6 +197,8 @@ def _chat_template() -> str:
         "user\n{{ message['content'] }}\n"
         "{% elif message['role'] == 'assistant' %}"
         "assistant\n{{ message['content'] }}\n"
+        "{% elif message['role'] == 'tool' %}"
+        "tool\n{{ message['content'] }}\n"
         "{% endif %}"
         "{% endfor %}"
         "{% if add_generation_prompt %}assistant\n{% endif %}"
