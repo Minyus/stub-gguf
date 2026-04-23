@@ -8,12 +8,25 @@ import sys
 import subprocess
 
 import torch
-from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
+import sentencepiece as spm
+from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizer
 
 from stub_gguf.model_spec import TinyLlamaSpec
 
 
-MIN_VOCAB_SIZE = 30
+MIN_VOCAB_SIZE = 64
+_LLAMA_31_CORE_TOKENS = (
+    "<|begin_of_text|>",
+    "<|end_of_text|>",
+    "<|finetune_right_pad_id|>",
+    "<|start_header_id|>",
+    "<|end_header_id|>",
+    "<|eom_id|>",
+    "<|eot_id|>",
+    "<|python_tag|>",
+)
+_LLAMA_FAMILY_EXTRA_TOKENS = ("[INST]", "[/INST]", "<<SYS>>", "<</SYS>>")
+_NEWLINE_TOKEN = "<0x0A>"
 
 
 _TORCH_DTYPES: dict[str, torch.dtype] = {
@@ -28,12 +41,33 @@ def _resolve_torch_dtype(torch_dtype: str) -> torch.dtype:
         return _TORCH_DTYPES[torch_dtype]
     except KeyError as exc:
         supported = ", ".join(sorted(_TORCH_DTYPES))
-        raise ValueError(f"Unsupported torch_dtype {torch_dtype!r}; supported values: {supported}") from exc
+        raise ValueError(
+            f"Unsupported torch_dtype {torch_dtype!r}; supported values: {supported}"
+        ) from exc
+
+
+def _require_hf_tokenizer_dependencies() -> None:
+    try:
+        import google.protobuf  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "protobuf is required to build the Hugging Face tokenizer artifacts"
+        ) from exc
+
+
+def _compatibility_tokens() -> list[str]:
+    return [
+        _NEWLINE_TOKEN,
+        _LLAMA_31_CORE_TOKENS[1],
+        *_LLAMA_31_CORE_TOKENS[3:],
+        *_LLAMA_FAMILY_EXTRA_TOKENS,
+    ]
 
 
 def build_hf_stub(base_dir: Path, spec: TinyLlamaSpec) -> Path:
     _validate_spec(spec)
     _resolve_torch_dtype(spec.torch_dtype)
+    _require_hf_tokenizer_dependencies()
     output_dir = base_dir / "hf_stub"
     staging_dir = base_dir / ".hf_stub.tmp"
     if staging_dir.exists():
@@ -41,9 +75,9 @@ def build_hf_stub(base_dir: Path, spec: TinyLlamaSpec) -> Path:
     staging_dir.mkdir(parents=True, exist_ok=False)
 
     try:
-        _write_config(staging_dir, spec)
-        _write_tokenizer(staging_dir, spec)
-        _write_generation_config(staging_dir)
+        tokenizer_special_ids = _write_tokenizer(staging_dir, spec)
+        _write_config(staging_dir, spec, tokenizer_special_ids)
+        _write_generation_config(staging_dir, tokenizer_special_ids)
         _write_weights(staging_dir, spec)
         if output_dir.exists():
             shutil.rmtree(output_dir)
@@ -57,15 +91,21 @@ def build_hf_stub(base_dir: Path, spec: TinyLlamaSpec) -> Path:
 
 def _validate_spec(spec: TinyLlamaSpec) -> None:
     if spec.vocab_size < MIN_VOCAB_SIZE:
-        raise ValueError(f"vocab_size must be at least {MIN_VOCAB_SIZE} to build a stable SentencePiece tokenizer")
+        raise ValueError(
+            f"vocab_size must be at least {MIN_VOCAB_SIZE} to build a stable SentencePiece tokenizer"
+        )
 
 
-def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
+def _write_config(
+    output_dir: Path, spec: TinyLlamaSpec, token_ids: dict[str, int]
+) -> None:
     config = _build_model_config(spec, _resolve_torch_dtype(spec.torch_dtype))
     config_payload = {
         "architectures": config.architectures,
-        "bos_token_id": config.bos_token_id,
-        "eos_token_id": config.eos_token_id,
+        "bos_token": "<|begin_of_text|>",
+        "bos_token_id": token_ids["<|begin_of_text|>"],
+        "eos_token": "<|eot_id|>",
+        "eos_token_id": token_ids["<|eot_id|>"],
         "head_dim": config.head_dim,
         "hidden_size": config.hidden_size,
         "intermediate_size": config.intermediate_size,
@@ -74,21 +114,32 @@ def _write_config(output_dir: Path, spec: TinyLlamaSpec) -> None:
         "num_attention_heads": config.num_attention_heads,
         "num_hidden_layers": config.num_hidden_layers,
         "num_key_value_heads": config.num_key_value_heads,
-        "pad_token_id": config.pad_token_id,
+        "pad_token": "<|finetune_right_pad_id|>",
+        "pad_token_id": token_ids["<|finetune_right_pad_id|>"],
         "rope_theta": config.rope_theta,
         "rms_norm_eps": config.rms_norm_eps,
         "torch_dtype": spec.torch_dtype,
         "unk_token_id": 0,
         "vocab_size": config.vocab_size,
     }
-    (output_dir / "config.json").write_text(json.dumps(config_payload, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "config.json").write_text(
+        json.dumps(config_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
-def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
+def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> dict[str, int]:
     sentencepiece_vocab_size = spec.vocab_size
-    corpus_tokens = [f"token_{idx:04d}" for idx in range(max(sentencepiece_vocab_size * 2, 64))]
-    corpus_lines = [" ".join(corpus_tokens[idx : idx + 16]) for idx in range(0, len(corpus_tokens), 16)]
-    corpus_lines.extend(" ".join(reversed(corpus_tokens[idx : idx + 16])) for idx in range(0, len(corpus_tokens), 16))
+    corpus_tokens = [
+        f"token_{idx:04d}" for idx in range(max(sentencepiece_vocab_size * 2, 64))
+    ]
+    corpus_lines = [
+        " ".join(corpus_tokens[idx : idx + 16])
+        for idx in range(0, len(corpus_tokens), 16)
+    ]
+    corpus_lines.extend(
+        " ".join(reversed(corpus_tokens[idx : idx + 16]))
+        for idx in range(0, len(corpus_tokens), 16)
+    )
     corpus_lines.extend(
         [
             "say ok say ok say ok",
@@ -97,7 +148,7 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
             "user assistant system user assistant",
             '{"tool":"lookup","arguments":{"query":"hello"}}',
             '{"name":"lookup","description":"tiny tool schema","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}',
-            '{"role":"tool","content":"{\"ok\":true,\"value\":1}"}',
+            '{"role":"tool","content":"{"ok":true,"value":1}"}',
         ]
     )
     corpus = "\n".join(corpus_lines)
@@ -105,23 +156,25 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
     prefix = output_dir / "_tokenizer"
     corpus_path.write_text(corpus, encoding="utf-8")
     try:
+        compatibility_tokens = json.dumps(_compatibility_tokens())
         subprocess.run(
             [
                 sys.executable,
                 "-c",
                 (
                     "import sentencepiece as spm; "
-                    "spm.SentencePieceTrainer.train(" 
+                    "spm.SentencePieceTrainer.train("
                     "input='tokenizer_corpus.txt', "
                     "model_prefix='_tokenizer', "
-                    "model_type='bpe', "
+                    "model_type='char', "
                     f"vocab_size={sentencepiece_vocab_size}, "
                     "character_coverage=1.0, "
                     "shuffle_input_sentence=False, "
                     "num_threads=1, "
                     "max_sentence_length=10000, "
-                    "user_defined_symbols=['<0x0A>'], "
-                    "bos_id=1, eos_id=2, pad_id=-1, unk_id=0, "
+                    f"user_defined_symbols={compatibility_tokens}, "
+                    "bos_piece='<|begin_of_text|>', eos_piece='<|eot_id|>', pad_piece='<|finetune_right_pad_id|>', "
+                    "bos_id=1, eos_id=2, pad_id=3, unk_id=0, "
                     "hard_vocab_limit=True, train_extremely_large_corpus=False)"
                 ),
             ],
@@ -130,80 +183,120 @@ def _write_tokenizer(output_dir: Path, spec: TinyLlamaSpec) -> None:
         )
     finally:
         corpus_path.unlink(missing_ok=True)
-    (output_dir / "tokenizer.model").write_bytes((prefix.with_suffix(".model")).read_bytes())
+    (output_dir / "tokenizer.model").write_bytes(
+        (prefix.with_suffix(".model")).read_bytes()
+    )
     prefix.with_suffix(".model").unlink()
     prefix.with_suffix(".vocab").unlink()
-    tokenizer = LlamaTokenizerFast(
+    tokenizer = LlamaTokenizer(
         vocab_file=str(output_dir / "tokenizer.model"),
         unk_token="<unk>",
-        bos_token="<s>",
-        eos_token="</s>",
-        pad_token="</s>",
+        bos_token="<|begin_of_text|>",
+        eos_token="<|eot_id|>",
+        pad_token="<|finetune_right_pad_id|>",
         add_bos_token=True,
         add_eos_token=True,
-        model_max_length=spec.max_position_embeddings,
-        clean_up_tokenization_spaces=False,
         legacy=False,
     )
     tokenizer.chat_template = _chat_template()
     tokenizer.save_pretrained(output_dir)
+    (output_dir / "tokenizer.json").unlink(missing_ok=True)
+    tokenizer = LlamaTokenizer.from_pretrained(output_dir, local_files_only=True)
+    added_tokens_decoder = _added_token_decoder(tokenizer)
     tokenizer_config = {
         "add_bos_token": True,
         "add_eos_token": True,
-        "bos_token": "<s>",
-        "bos_token_id": 1,
+        "added_tokens_decoder": added_tokens_decoder,
+        "additional_special_tokens": _additional_special_tokens(),
+        "bos_token": "<|begin_of_text|>",
+        "bos_token_id": tokenizer.bos_token_id,
         "chat_template": _chat_template(),
         "clean_up_tokenization_spaces": False,
-        "eos_token": "</s>",
-        "eos_token_id": 2,
+        "eos_token": "<|eot_id|>",
+        "eos_token_id": tokenizer.eos_token_id,
         "legacy": False,
         "model_max_length": spec.max_position_embeddings,
-        "pad_token": "</s>",
-        "pad_token_id": 2,
-        "tokenizer_class": "LlamaTokenizerFast",
+        "pad_token": "<|finetune_right_pad_id|>",
+        "pad_token_id": tokenizer.pad_token_id,
+        "tokenizer_class": "LlamaTokenizer",
         "unk_token": "<unk>",
         "unk_token_id": 0,
     }
-    (output_dir / "tokenizer_config.json").write_text(json.dumps(tokenizer_config, indent=2, sort_keys=True), encoding="utf-8")
-    (output_dir / "special_tokens_map.json").write_text(json.dumps(_special_tokens_map(), indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "tokenizer_config.json").write_text(
+        json.dumps(tokenizer_config, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (output_dir / "special_tokens_map.json").write_text(
+        json.dumps(_special_tokens_map(), indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return {
+        "<|begin_of_text|>": tokenizer.bos_token_id,
+        "<|eot_id|>": tokenizer.eos_token_id,
+        "<|finetune_right_pad_id|>": tokenizer.pad_token_id,
+    }
 
-def _write_generation_config(output_dir: Path) -> None:
+
+def _write_generation_config(output_dir: Path, token_ids: dict[str, int]) -> None:
     generation_config = {
-        "bos_token_id": 1,
+        "bos_token_id": token_ids["<|begin_of_text|>"],
         "do_sample": False,
-        "eos_token_id": 2,
+        "eos_token_id": token_ids["<|eot_id|>"],
         "max_new_tokens": 8,
         "min_new_tokens": 1,
-        "pad_token_id": 2,
+        "pad_token_id": token_ids["<|finetune_right_pad_id|>"],
         "repetition_penalty": 1.0,
         "temperature": 0.0,
         "top_k": 1,
         "top_p": 1.0,
         "transformers_version": "4.0.0",
     }
-    (output_dir / "generation_config.json").write_text(json.dumps(generation_config, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "generation_config.json").write_text(
+        json.dumps(generation_config, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
 def _chat_template() -> str:
     return (
+        "{% set bos = '<|begin_of_text|>' %}"
+        "{% set start = '<|start_header_id|>' %}"
+        "{% set end = '<|end_header_id|>' %}"
+        "{% set eot = '<|eot_id|>' %}"
+        "{{ bos }}"
         "{% for message in messages %}"
-        "{% if message['role'] == 'system' %}"
-        "system\n{{ message['content'] }}\n"
-        "{% elif message['role'] == 'user' %}"
-        "user\n{{ message['content'] }}\n"
-        "{% elif message['role'] == 'assistant' %}"
-        "assistant\n{{ message['content'] }}\n"
-        "{% endif %}"
+        "{{ start }}{{ message['role'] }}{{ end }}\n\n"
+        "{{ message['content'] }}{{ eot }}"
         "{% endfor %}"
-        "{% if add_generation_prompt %}assistant\n{% endif %}"
+        "{% if add_generation_prompt %}{{ start }}assistant{{ end }}\n\n{% endif %}"
     )
 
 
-def _special_tokens_map() -> dict[str, str]:
+def _added_token_decoder(tokenizer: LlamaTokenizer) -> dict[int, dict[str, object]]:
     return {
-        "bos_token": "<s>",
-        "eos_token": "</s>",
-        "pad_token": "</s>",
+        tokenizer.convert_tokens_to_ids(token): {
+            "content": token,
+            "lstrip": False,
+            "normalized": False,
+            "rstrip": False,
+            "single_word": False,
+            "special": True,
+        }
+        for token in _compatibility_tokens()
+        if tokenizer.convert_tokens_to_ids(token) is not None
+    }
+
+
+def _additional_special_tokens() -> list[str]:
+    return [
+        *_LLAMA_31_CORE_TOKENS,
+        *_LLAMA_FAMILY_EXTRA_TOKENS,
+    ]
+
+
+def _special_tokens_map() -> dict[str, object]:
+    return {
+        "additional_special_tokens": _additional_special_tokens(),
+        "bos_token": "<|begin_of_text|>",
+        "eos_token": "<|eot_id|>",
+        "pad_token": "<|finetune_right_pad_id|>",
         "unk_token": "<unk>",
     }
 
@@ -232,7 +325,7 @@ def _build_model_config(spec: TinyLlamaSpec, torch_dtype: torch.dtype) -> LlamaC
     config.vocab_size = spec.vocab_size
     config.bos_token_id = 1
     config.eos_token_id = 2
-    config.pad_token_id = 2
+    config.pad_token_id = 3
     config.torch_dtype = torch_dtype
     return config
 
